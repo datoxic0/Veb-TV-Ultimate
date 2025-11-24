@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ultimate IPTV Player</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>
+        <i class="fas fa-tv"></i> Ultimate IPTV Player
+      </h1>
+      <div class="header-controls">
+        <div class="search-container">
+          <input type="search" id="channelSearch" placeholder="Search channels..." aria-label="Search channels" autocomplete="off" v-model="searchQuery">
+        </div>
+        <div class="vpn-controls">
+          <button id="vpnToggle" @click="toggleVPN" :class="{ active: isVpnActive }" :title="isVpnActive ? 'Disable VPN' : 'Enable VPN'">
+            <i class="fas fa-shield-alt"></i> <span>{{ isVpnActive ? 'VPN On' : 'VPN Off' }}</span>
+          </button>
+        </div>
+        <div class="theme-controls">
+          <button @click="toggleTheme" class="theme-toggle-btn" :aria-label="isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'" :title="isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
+            <i :class="isDarkMode ? 'fas fa-sun' : 'fas fa-moon'"></i>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="container">
+      <main>
+        <section id="platforms">
+          <div class="section-header">
+            <h2><i class="fas fa-layer-group"></i> Categories</h2>
+            <div class="filter-actions">
+              <button @click="toggleAllCategories(true)" class="filter-btn">All</button>
+              <button @click="toggleAllCategories(false)" class="filter-btn">None</button>
+            </div>
+          </div>
+          <div id="platforms-list" class="platforms-list">
+            <div v-for="(category, index) in availableCategories" 
+                 :key="index" 
+                 class="category-item" 
+                 :class="{ 'active': activeCategoryFilters[category] }"
+                 @click="toggleCategoryFilter(category)">
+              <i :class="getCategoryIcon(category)" @error="handleIconError" class="category-icon"></i>
+              <div class="category-info">
+                  <span class="category-name">{{ getCleanCategoryName(category).charAt(0).toUpperCase() + getCleanCategoryName(category).slice(1) }}</span>
+              </div>
+              <div class="category-badge-wrapper">
+                <span class="channel-count">{{ getCategoryChannelCount(category) }}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="channels">
+          <div class="section-header">
+            <h2><i class="fas fa-th-list"></i> Channels</h2>
+            <div class="playlist-input">
+              <input type="text" v-model="newPlaylistUrl" placeholder="Enter M3U playlist URL" @keyup.enter="addPlaylist">
+              <button @click="addPlaylist" :disabled="loadingPlaylist">
+                <div v-if="loadingPlaylist" class="spinner"></div>
+                <i v-else class="fas fa-plus"></i>
+              </button>
+            </div>
+          </div>
+          <div id="channels-list" class="channels-container">
+            <div v-if="filteredChannels.length === 0" class="no-channels">
+              <i class="fas fa-info-circle"></i>
+              <p>No channels available. Add a playlist to get started.</p>
+            </div>
+            <div v-for="(channel, index) in filteredChannels" 
+                 :key="index" 
+                 class="channel" 
+                 :class="{ 'active': currentChannel && currentChannel.url === channel.url }"
+                 @click="selectChannel(channel)">
+              <img v-if="channel.logo" :src="channel.logo" :alt="channel.name" class="channel-logo">
+              <i v-else class="fas fa-tv channel-icon"></i>
+              <div class="channel-info">
+                <div class="channel-name">{{ channel.name }}</div>
+                <div class="channel-meta">
+                  <span v-if="channel.country" class="channel-country">{{ channel.country }}</span>
+                  <span v-if="channel.language" class="channel-language">{{ channel.language }}</span>
+                </div>
+              </div>
+              <div class="viewers" v-if="getViewerCount(channel.url) > 0">
+                <span class="viewer-count">{{ getViewerCount(channel.url) }}</span>
+                <i class="fas fa-eye"></i>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="player">
+          <div class="section-header">
+            <h2><i class="fas fa-play-circle"></i> Video Player</h2>
+            <div class="player-controls" v-if="currentChannel">
+              <button @click="recommendChannel" class="recommend-btn" title="Recommend to others">
+                <i class="fas fa-share"></i> Recommend
+              </button>
+            </div>
+          </div>
+          <div class="player-container">
+            <div v-if="currentChannel" class="video-wrapper">
+              <video id="videoPlayer" controls></video>
+              <div id="channelInfo" class="channel-info-bar">
+                <div class="channel-details">
+                  <img v-if="currentChannel.logo" :src="currentChannel.logo" :alt="currentChannel.name" class="channel-logo">
+                  <i v-else class="fas fa-tv"></i>
+                  <div>
+                    <h3>{{ currentChannel.name }}</h3>
+                    <p v-if="currentChannel.category || currentChannel.country">
+                      {{ currentChannel.category }} <span v-if="currentChannel.country">• {{ currentChannel.country }}</span>
+                    </p>
+                  </div>
+                </div>
+                <div class="stream-status" :class="streamStatus.class">
+                  <i :class="streamStatus.icon"></i>
+                  <span>{{ streamStatus.message }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="no-channel-selected">
+              <i class="fas fa-tv"></i>
+              <p>Select a channel to start watching</p>
+              <small>Add playlists using the input above.</small>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer>
+      <p>&copy; 2025 Ultimate IPTV Player. All rights reserved. | Developed by <b>Siyabonga B Phakathi</b> of The Voice & Eye of Bhambatha Inc. | <a href="https://www.bhambathablog.wordpress.com" target="_blank">Blog</a> | <a href="https://www.facebook.com/@C.Datoxic.P" target="_blank">Facebook</a> | <a href="https://websim.ai/@whisperinggalaxyd" target="_blank">Websim</a></p>
+      <div class="footer-info">
+        <p id="status-message" v-cloak>{{ statusMessage }}</p>
+        <p id="performance-summary" v-cloak>{{ getPerformanceSummary() }}</p>
+      </div>
+    </footer>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "vue": "https://unpkg.com/vue@3/dist/vue.esm-browser.js"
+    }
+  }
+  </script>
+  <script type="module" src="script/app.js"></script>
+</body>
+</html>
